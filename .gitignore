@@ -1,0 +1,40 @@
+.DS_Store
+node_modules
+dist
+build
+
+stats.html
+# local env files
+.env.local
+.env.*.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+dev-dist/*
+types/auto-imports.d.ts
+types/components.d.ts
+
+# Local env files
+.env.development
+.env.production
+
+# PaddleOCR
+PaddleOCR/
+
+# Install scripts
+install.ps1
+
+# Local Node.js
+node-v18.19.0-win-x64/
