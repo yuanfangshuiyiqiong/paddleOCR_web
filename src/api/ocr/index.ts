@@ -4,6 +4,8 @@ import { AxiosPromise } from 'axios'
 export interface OCRBlock {
   text: string
   confidence: number
+  width: number
+  height: number
   box: number[][]
 }
 
@@ -20,28 +22,30 @@ export interface OCRResult {
 
 export interface OCRPage {
   page: number
+  img_width: number
+  img_height: number
   blocks: OCRBlock[]
 }
 
 /** predict 接口的响应结构 */
 export interface PredictResponse {
+  code: number
   success: boolean
   filename: string
   total_pages: number
   total_text_blocks: number
   processing_time_ms: number
   device: string
-  pages: {
-    page: number
-    blocks: OCRBlock[]
-  }[]
+  pages: OCRPage[]
 }
 
 /**
  * 调用 /ocr-api/predict，接收截图图片进行 OCR 识别。
  * 返回扁平化结果：blocks + combined_text。
  */
-export function predictImage(file: File): AxiosPromise<{ data: { blocks: OCRBlock[]; combined_text: string } }> {
+export function predictImage(
+  file: File,
+): AxiosPromise<{ data: { blocks: OCRBlock[]; combined_text: string; img_width?: number; img_height?: number } }> {
   const formData = new FormData()
   formData.append('file', file)
   return request({
@@ -53,14 +57,13 @@ export function predictImage(file: File): AxiosPromise<{ data: { blocks: OCRBloc
     },
     timeout: 60000,
   }).then((res: any) => {
-    // 展平 predict 接口返回的多页结构，取第一页
     const raw: PredictResponse = res.data
     const firstPage = raw.pages?.[0]
     const blocks: OCRBlock[] = firstPage?.blocks ?? []
     const combined_text = blocks.map((b) => b.text).join('')
     return {
       ...res,
-      data: { blocks, combined_text },
+      data: { blocks, combined_text, img_width: firstPage?.img_width, img_height: firstPage?.img_height },
     }
   }) as any
 }

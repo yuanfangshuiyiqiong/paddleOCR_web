@@ -2,6 +2,13 @@
 node_modules
 dist
 
+# Node binaries and large files
+node-*/**/*.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
 stats.html
 # local env files
 .env.local

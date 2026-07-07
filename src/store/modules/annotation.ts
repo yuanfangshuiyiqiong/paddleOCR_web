@@ -37,10 +37,19 @@ export interface TableRow {
   lowerTolerance: string
 }
 
+export interface CropRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export interface AnnotationItem {
   id: string
   /** 当前标注的截图 */
   dataUrl: string
+  /** 截图在 canvas 上的像素坐标（用于旋转后重新裁剪子图） */
+  cropRect: CropRect
   /** 每行对应原始值的局部裁剪图 */
   cropDataUrls: string[]
   /** 表格数据 */
@@ -78,8 +87,9 @@ export const useAnnotationStore = defineStore('annotation', {
      * 添加一条新标注
      * @param ocrBlocks OCR 识别出的文字块
      * @param dataUrl 截图 dataURL
+     * @param cropRect 截图在 canvas 上的像素坐标（用于裁剪子图）
      */
-    addAnnotation(ocrBlocks: OCRBlock[], dataUrl: string) {
+    addAnnotation(ocrBlocks: OCRBlock[], dataUrl: string, cropRect: CropRect) {
       const id = `anno-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const startIndex = this.globalRowCount + 1
       const tableRows: TableRow[] = ocrBlocks.map((block, i) => ({
@@ -92,7 +102,7 @@ export const useAnnotationStore = defineStore('annotation', {
         upperTolerance: '',
         lowerTolerance: '',
       }))
-      this.history.unshift({ id, dataUrl, ocrBlocks, cropDataUrls: [], tableRows, startIndex, createdAt: Date.now() })
+      this.history.unshift({ id, dataUrl, cropRect, ocrBlocks, cropDataUrls: [], tableRows, startIndex, createdAt: Date.now() })
       this.activeId = id
     },
 
@@ -113,7 +123,11 @@ export const useAnnotationStore = defineStore('annotation', {
       const item = this.history.find((h) => h.id === annotationId)
       if (!item) return
       const idx = item.tableRows.findIndex((r) => r.index === rowIndex)
-      if (idx !== -1) item.tableRows.splice(idx, 1)
+      if (idx !== -1) {
+        item.tableRows.splice(idx, 1)
+        item.cropDataUrls.splice(idx, 1)
+        item.ocrBlocks.splice(idx, 1)
+      }
     },
 
     /**
@@ -150,7 +164,7 @@ export const useAnnotationStore = defineStore('annotation', {
     },
 
     /**
-     * 重新识别指定标注（旋转后 OCR）
+     * 重新识别指定标注（旋转后 OCR），增量更新：保留原 rows，只更新有新识别结果的行
      */
     rerotateAnnotation(id: string, blocks: OCRBlock[], dataUrl: string) {
       const item = this.history.find((h) => h.id === id)
@@ -158,16 +172,77 @@ export const useAnnotationStore = defineStore('annotation', {
       item.dataUrl = dataUrl
       item.ocrBlocks = blocks
       item.cropDataUrls = []
-      item.tableRows = blocks.map((block, i) => ({
-        annotationId: id,
-        index: item.startIndex + i,
-        subDrawing: '',
-        originalValue: block.text,
-        gageType: '其他' as GageType,
-        toleranceType: '其他' as ToleranceType,
-        upperTolerance: '',
-        lowerTolerance: '',
-      }))
+
+      const oldRows = item.tableRows
+      const newRows: TableRow[] = blocks.map((block, i) => {
+        const old = oldRows[i]
+        return {
+          annotationId: id,
+          index: item.startIndex + i,
+          subDrawing: old?.subDrawing ?? '',
+          originalValue: block.text,
+          gageType: old?.gageType ?? '其他',
+          toleranceType: old?.toleranceType ?? '其他',
+          upperTolerance: old?.upperTolerance ?? '',
+          lowerTolerance: old?.lowerTolerance ?? '',
+        }
+      })
+
+      if (blocks.length < oldRows.length) {
+        newRows.push(...oldRows.slice(blocks.length))
+      }
+
+      item.tableRows = newRows
+    },
+
+    /**
+     * 用旋转后的图像重新裁剪指定标注的所有子图
+     * 直接基于 item.dataUrl 裁剪，blocks 坐标在旋转后图像空间中，两者一一对应
+     */
+    async recropAnnotation(id: string): Promise<void> {
+      const item = this.history.find((h) => h.id === id)
+      if (!item) return
+
+      const cropDataUrls: string[] = []
+
+      for (const block of item.ocrBlocks) {
+        const box = block.box ?? []
+        if (!box.length) {
+          cropDataUrls.push(item.dataUrl)
+          continue
+        }
+
+        const xs = box.map((p: number[]) => p[0] ?? 0)
+        const ys = box.map((p: number[]) => p[1] ?? 0)
+        const left = Math.max(0, Math.min(...xs))
+        const top = Math.max(0, Math.min(...ys))
+        const width = Math.max(1, block.width ?? Math.max(...xs) - left)
+        const height = Math.max(1, block.height ?? Math.max(...ys) - top)
+
+        const dataUrl = await this.cropImageByUrl(item.dataUrl, left, top, width, height)
+        cropDataUrls.push(dataUrl)
+      }
+
+      item.cropDataUrls = cropDataUrls
+    },
+
+    /**
+     * 根据 imageUrl 裁剪子图并返回 dataURL
+     */
+    cropImageByUrl(imageUrl: string, left: number, top: number, width: number, height: number): Promise<string> {
+      return new Promise((resolve) => {
+        const img = new Image()
+        img.onload = () => {
+          const offscreen = document.createElement('canvas')
+          offscreen.width = width
+          offscreen.height = height
+          const ctx = offscreen.getContext('2d')!
+          ctx.drawImage(img, left, top, width, height, 0, 0, width, height)
+          resolve(offscreen.toDataURL('image/png'))
+        }
+        img.onerror = () => resolve(imageUrl)
+        img.src = imageUrl
+      })
     },
   },
 })

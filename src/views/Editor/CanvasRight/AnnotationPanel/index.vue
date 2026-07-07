@@ -19,17 +19,15 @@
         :key="row.index"
         class="field-card"
       >
-        <!-- 卡片顶部：截图 + 序号 -->
+        <!-- 卡片顶部：序号 + 截图 + 删除 -->
         <div class="card-head">
+          <span class="card-index">#{{ row.index }}</span>
           <img
-            :src="getAnnotation(row.annotationId)?.dataUrl"
-            alt="截图"
+            :src="getCropDataUrl(row)"
+            alt="裁剪图"
             class="card-thumb"
           />
-          <div class="card-head-right">
-            <span class="card-index">#{{ row.index }}</span>
-            <el-icon class="card-del" @click="deleteRow(row)"><Delete /></el-icon>
-          </div>
+          <el-icon class="card-del" @click="deleteRow(row)"><Delete /></el-icon>
         </div>
 
         <!-- 字段区域：纵向排列 -->
@@ -45,7 +43,11 @@
 
           <div class="field-item">
             <label class="field-label">原始值</label>
-            <span class="field-value">{{ row.originalValue }}</span>
+            <el-input
+              v-model="row.originalValue"
+              size="small"
+              placeholder="原始值"
+            />
           </div>
 
           <div class="field-item">
@@ -150,10 +152,16 @@ import { storeToRefs } from 'pinia'
 import { useAnnotationStore, gageTypes, toleranceTypes, type TableRow } from '@/store/modules/annotation'
 import { Loading, Delete, Picture, RefreshRight, RefreshLeft } from '@element-plus/icons-vue'
 import { rotateImage } from '@/api/ocr'
+import useCanvas from '@/views/Canvas/useCanvas'
+import { FabricTool } from '@/app/fabricTool'
 
 const annotationStore = useAnnotationStore()
 const { allTableRows, history, loading } = storeToRefs(annotationStore)
-const { clearAll, removeRow, removeAnnotation, rerotateAnnotation, setCropDataUrls } = annotationStore
+const { clearAll, removeRow, removeAnnotation, rerotateAnnotation, setCropDataUrls, recropAnnotation } = annotationStore
+const [fabricCanvas] = useCanvas()
+
+/** 获取 FabricTool 实例 */
+const getFabricTool = (): FabricTool | undefined => (fabricCanvas as any)?.tool
 
 /** 当前正在重识别的标注 ID */
 const rerotatingId = ref<string | null>(null)
@@ -161,6 +169,14 @@ const rerotatingId = ref<string | null>(null)
 /** 根据标注 ID 查找标注对象 */
 const getAnnotation = (id: string) =>
   history.value.find((h) => h.id === id)
+
+/** 根据行数据获取对应的裁剪图 URL */
+const getCropDataUrl = (row: TableRow) => {
+  const item = getAnnotation(row.annotationId)
+  if (!item) return ''
+  const localIndex = item.tableRows.findIndex((r) => r.index === row.index)
+  return item.cropDataUrls[localIndex] || item.dataUrl
+}
 
 /** 判断当前行是否是该标注的第一行（用于只渲染一次旋转按钮） */
 const isFirstRowOfAnnotation = (row: TableRow) => {
@@ -180,7 +196,15 @@ const handleRerotate = async (
     const blob = await (await fetch(dataUrl)).blob()
     const file = new File([blob], 'capture.png', { type: 'image/png' })
     const res = await rotateImage(file, angle)
+
+    if (!res.data.blocks?.length) {
+      console.warn('[Rerotate] 旋转后无识别结果，保留原数据')
+      return
+    }
+
     rerotateAnnotation(annotationId, res.data.blocks, dataUrl)
+    await recropAnnotation(annotationId)
+    getFabricTool()?.redrawAnnotationBubbles(annotationId)
   } catch (err) {
     console.error('[Annotation] Rotate OCR failed:', err)
   } finally {
@@ -251,42 +275,38 @@ const deleteRow = (row: TableRow) => {
   }
 }
 
-/* ---------- 卡片顶部：截图 + 序号/删除 ---------- */
+/* ---------- 卡片顶部：序号 + 截图 + 删除 ---------- */
 .card-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 10px;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
 }
 
 .card-thumb {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
   border: 1px solid #eee;
   border-radius: 4px;
   flex-shrink: 0;
-}
-
-.card-head-right {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  background: #fff;
 }
 
 .card-index {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #333;
+  min-width: 32px;
 }
 
 .card-del {
   color: #ccc;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 16px;
+  margin-left: auto;
 
   &:hover {
     color: #f56c6c;
@@ -322,16 +342,6 @@ const deleteRow = (row: TableRow) => {
   width: 54px;
   flex-shrink: 0;
   text-align: right;
-}
-
-.field-value {
-  flex: 1;
-  font-size: 12px;
-  color: #1559b5;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tol-side {

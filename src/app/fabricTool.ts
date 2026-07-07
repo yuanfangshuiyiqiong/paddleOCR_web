@@ -1,4 +1,4 @@
-import { Point, Rect, FabricObject } from 'fabric'
+import { Point, Rect, FabricObject, Textbox } from 'fabric'
 import { watch, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Disposable } from '@/utils/lifecycle'
@@ -175,6 +175,13 @@ export class FabricTool extends Disposable {
     annotationStore.setLoading(true)
     mainStore.setRightState(RightStates.ELEMENT_ANNOTATION)
 
+    // ========== 调试日志 ==========
+    const DEBUG = true
+    if (DEBUG) {
+      console.log('========== 截图开始 ==========')
+      console.log('输入参数 - left:', left, 'top:', top, 'width:', width, 'height:', height)
+    }
+
     try {
       // 计算实际像素坐标
       const vpt = this.canvas.viewportTransform || [1, 0, 0, 1, 0, 0]
@@ -187,6 +194,12 @@ export class FabricTool extends Disposable {
       const actualTop = Math.max(0, top * scaleY + offsetY)
       const actualWidth = Math.min(this.canvas.width! - actualLeft, width * scaleX)
       const actualHeight = Math.min(this.canvas.height! - actualTop, height * scaleY)
+
+      if (DEBUG) {
+        console.log('视口变换 - scaleX:', scaleX, 'scaleY:', scaleY, 'offsetX:', offsetX, 'offsetY:', offsetY)
+        console.log('实际坐标 - actualLeft:', actualLeft, 'actualTop:', actualTop, 'actualWidth:', actualWidth, 'actualHeight:', actualHeight)
+        console.log('canvas.width:', this.canvas.width, 'canvas.height:', this.canvas.height)
+      }
 
       const dataUrl = this.canvas.toDataURL({
         left: actualLeft,
@@ -201,12 +214,26 @@ export class FabricTool extends Disposable {
       const blob = await (await fetch(dataUrl)).blob()
       const file = new File([blob], 'capture.png', { type: 'image/png' })
 
+      // 后端直接返回截图图像空间的坐标（box 原点 = 截图左上角）
       const res = await predictImage(file)
 
+      if (DEBUG) {
+        console.log('OCR 返回原始数据:', JSON.stringify(res.data, null, 2))
+      }
+
       const blocks = res.data.blocks ?? []
-      const cropDataUrls = await Promise.all(blocks.map((block) => this.cropBlockImage(block, actualLeft, actualTop, actualWidth, actualHeight)))
-      annotationStore.addAnnotation(blocks, dataUrl)
-      annotationStore.setCropDataUrls(annotationStore.history[0]!.id, cropDataUrls)
+      const startIndex = annotationStore.globalRowCount + 1
+
+      annotationStore.addAnnotation(blocks, dataUrl, { left: actualLeft, top: actualTop, width: actualWidth, height: actualHeight })
+      const newId = annotationStore.history[0]!.id
+      annotationStore.setCropDataUrls(newId, await Promise.all(blocks.map((block: any) => this.cropBlockImage(block, actualLeft, actualTop))))
+
+      // 追加绘制新泡泡图（不清除旧的）
+      this.drawBubbleAnnotations(blocks, actualLeft, actualTop, startIndex, newId)
+
+      if (DEBUG) {
+        console.log('========== 截图结束 ==========')
+      }
     } catch (err) {
       console.error('[Annotation] OCR failed:', err)
     } finally {
@@ -214,7 +241,7 @@ export class FabricTool extends Disposable {
     }
   }
 
-  private async cropBlockImage(block: any, baseLeft: number, baseTop: number, baseWidth: number, baseHeight: number): Promise<string> {
+  private async cropBlockImage(block: any, actualLeft: number, actualTop: number): Promise<string> {
     const box = block.box ?? []
     if (!box.length) return ''
 
@@ -222,20 +249,92 @@ export class FabricTool extends Disposable {
     const ys = box.map((p: number[]) => p[1] ?? 0)
     const left = Math.max(0, Math.min(...xs))
     const top = Math.max(0, Math.min(...ys))
-    const right = Math.min(baseWidth, Math.max(...xs))
-    const bottom = Math.min(baseHeight, Math.max(...ys))
+    const width = Math.max(1, block.width ?? Math.max(...xs) - left)
+    const height = Math.max(1, block.height ?? Math.max(...ys) - top)
 
-    const width = Math.max(1, right - left)
-    const height = Math.max(1, bottom - top)
-
+    // box 坐标是截图 PNG 图片空间的坐标，需要加上截图在 canvas 上的偏移
+    // 才能得到 canvas 像素坐标，从而正确裁剪出子图
     return this.canvas.toDataURL({
-      left: baseLeft + left,
-      top: baseTop + top,
+      left: actualLeft + left,
+      top: actualTop + top,
       width,
       height,
       format: 'png',
       multiplier: 1,
     })
+  }
+
+  /**
+   * 绘制泡泡图标注（红框 + 序号）
+   */
+  private drawBubbleAnnotations(blocks: any[], baseLeft: number, baseTop: number, startIndex: number = 1, annotationId?: string) {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i]
+      const box = block.box ?? []
+      if (!box.length) continue
+
+      const xs = box.map((p: number[]) => p[0] ?? 0)
+      const ys = box.map((p: number[]) => p[1] ?? 0)
+      const left = baseLeft + Math.max(0, Math.min(...xs))
+      const top = baseTop + Math.max(0, Math.min(...ys))
+      const rectWidth = Math.max(1, block.width ?? Math.max(...xs) - Math.min(...xs))
+      const rectHeight = Math.max(1, block.height ?? Math.max(...ys) - Math.min(...ys))
+
+      const rect = new Rect({
+        left,
+        top,
+        width: rectWidth,
+        height: rectHeight,
+        fill: 'transparent',
+        stroke: '#ff4444',
+        strokeWidth: 2,
+        selectable: false,
+        evented: false,
+        name: 'bubble-rect',
+      })
+      if (annotationId) rect.set('data', { annotationId })
+
+      const indexSize = 20
+      const indexLeft = left + rectWidth
+      const indexTop = top - indexSize
+
+      const indexBg = new Rect({
+        left: indexLeft,
+        top: indexTop,
+        width: indexSize,
+        height: indexSize,
+        fill: '#ff4444',
+        rx: 4,
+        ry: 4,
+        selectable: false,
+        evented: false,
+        name: 'bubble-index-bg',
+      })
+      if (annotationId) indexBg.set('data', { annotationId })
+
+      const indexText = new Textbox(String(startIndex + i), {
+        left: indexLeft,
+        top: indexTop,
+        width: indexSize,
+        height: indexSize,
+        fontSize: 14,
+        fill: '#ffffff',
+        fontFamily: 'Arial, sans-serif',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        selectable: false,
+        evented: false,
+        name: 'bubble-index-text',
+      })
+      if (annotationId) indexText.set('data', { annotationId })
+
+      this.canvas.add(rect)
+      this.canvas.add(indexBg)
+      this.canvas.add(indexText)
+    }
+
+    this.canvas.renderAll()
   }
 
   /**
@@ -284,5 +383,21 @@ export class FabricTool extends Disposable {
         this.handMoveActivate = space
       },
     )
+  }
+
+  /**
+   * 重新绘制指定标注的泡泡图（用于旋转后更新）
+   */
+  public redrawAnnotationBubbles(annotationId: string) {
+    const annotationStore = useAnnotationStore()
+    const item = annotationStore.history.find((h) => h.id === annotationId)
+    if (!item) return
+
+    // 清除该标注的旧泡泡图
+    const toRemove = this.canvas.getObjects().filter((obj) => (obj as any).data?.annotationId === annotationId)
+    toRemove.forEach((obj) => this.canvas.remove(obj))
+
+    // 重新绘制
+    this.drawBubbleAnnotations(item.ocrBlocks, item.cropRect.left, item.cropRect.top, item.startIndex, annotationId)
   }
 }

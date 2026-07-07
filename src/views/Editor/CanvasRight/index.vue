@@ -56,7 +56,7 @@ const exportFile = () => {
   height: calc(100% - 40px);
 }
 .right-content {
-  padding: 10px 5px 10px 10px;
+  padding: 10px 12px 10px 10px;
   font-size: 13px;
   overflow-y: scroll;
   overflow-x: hidden;
