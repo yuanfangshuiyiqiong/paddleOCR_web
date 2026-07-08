@@ -22,15 +22,18 @@ export default () => {
     const { currentTemplate } = storeToRefs(templatesStore)
     const [ canvas ] = useCanvas()
     const { left, top, width, height } = useCenter()
-    
+
     const backgroundImage = await Image.fromURL(dataURL, {crossOrigin: 'anonymous'}, {})
     let scaleX = 1, scaleY = 1
     if (currentTemplate.value.workSpace.imageSize === 'cover') {
       scaleX = width / (backgroundImage.width ? backgroundImage.width : 1), scaleY = height / (backgroundImage.height ? backgroundImage.height : 1)
     }
-    backgroundImage.set({ left, top, scaleX, scaleY })
+    backgroundImage.set({ left, top, scaleX, scaleY, src: dataURL })
     canvas.set({backgroundImage})
     canvas.renderAll()
+
+    // 同步持久化到 store（reloadBgElement 兜底读取）
+    templatesStore.updateWorkSpace({ workSpace: { ...currentTemplate.value.workSpace, imageURL: dataURL } })
   }
   
   const getBackgroundImageOption = () => {

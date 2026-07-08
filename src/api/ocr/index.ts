@@ -29,14 +29,20 @@ export interface OCRPage {
 
 /** predict 接口的响应结构 */
 export interface PredictResponse {
-  code: number
-  success: boolean
-  filename: string
-  total_pages: number
-  total_text_blocks: number
-  processing_time_ms: number
-  device: string
-  pages: OCRPage[]
+  code?: number
+  success?: boolean
+  filename?: string
+  total_pages?: number
+  total_text_blocks?: number
+  processing_time_ms?: number
+  device?: string
+  // 扁平结构：blocks 直接在顶层
+  blocks?: OCRBlock[]
+  combined_text?: string
+  img_width?: number
+  img_height?: number
+  // 分页结构：pages 包含 blocks
+  pages?: OCRPage[]
 }
 
 /**
@@ -58,12 +64,14 @@ export function predictImage(
     timeout: 60000,
   }).then((res: any) => {
     const raw: PredictResponse = res.data
-    const firstPage = raw.pages?.[0]
-    const blocks: OCRBlock[] = firstPage?.blocks ?? []
-    const combined_text = blocks.map((b) => b.text).join('')
+    // 兼容两种返回结构：1. blocks 在顶层（当前后端） 2. blocks 在 pages[0]（旧后端）
+    const blocks: OCRBlock[] = raw.blocks ?? raw.pages?.[0]?.blocks ?? []
+    const combined_text = raw.combined_text ?? blocks.map((b: OCRBlock) => b.text).join('')
+    const img_width = raw.img_width ?? raw.pages?.[0]?.img_width
+    const img_height = raw.img_height ?? raw.pages?.[0]?.img_height
     return {
       ...res,
-      data: { blocks, combined_text, img_width: firstPage?.img_width, img_height: firstPage?.img_height },
+      data: { blocks, combined_text, img_width, img_height },
     }
   }) as any
 }
@@ -105,9 +113,8 @@ export function rotateImage(
     timeout: 60000,
   }).then((res: any) => {
     const raw: PredictResponse = res.data
-    const firstPage = raw.pages?.[0]
-    const blocks: OCRBlock[] = firstPage?.blocks ?? []
-    const combined_text = blocks.map((b: OCRBlock) => b.text).join('')
+    const blocks: OCRBlock[] = raw.blocks ?? raw.pages?.[0]?.blocks ?? []
+    const combined_text = raw.combined_text ?? blocks.map((b: OCRBlock) => b.text).join('')
     return { ...res, data: { blocks, combined_text } }
   }) as any
 }

@@ -896,6 +896,7 @@ const generateGridBackground = async (status?: string) => {
     scaleY: workSpaceDraw.scaleY,
     width: workSpaceDraw.width,
     height: workSpaceDraw.height,
+    src: imageURL,
   });
   canvas.set("backgroundImage", backgroundImage);
   templatesStore.setBackgroundImage(backgroundImage.toObject());
@@ -1057,6 +1058,7 @@ const generateShadingBackground = async () => {
     scaleY,
     width: imageWidth,
     height: imageHeight,
+    src: imageURL,
   });
 
   canvas.set("backgroundImage", backgroundImage);

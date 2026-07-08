@@ -92,6 +92,10 @@ export const useAnnotationStore = defineStore('annotation', {
     addAnnotation(ocrBlocks: OCRBlock[], dataUrl: string, cropRect: CropRect) {
       const id = `anno-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const startIndex = this.globalRowCount + 1
+      console.log('[addAnnotation] cropRect:', JSON.stringify(cropRect), 'ocrBlocks数:', ocrBlocks.length, 'startIndex:', startIndex)
+      if (ocrBlocks.length) {
+        console.log('[addAnnotation] 第一个block box:', JSON.stringify(ocrBlocks[0].box))
+      }
       const tableRows: TableRow[] = ocrBlocks.map((block, i) => ({
         annotationId: id,
         index: startIndex + i,
