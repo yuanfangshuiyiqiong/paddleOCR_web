@@ -91,7 +91,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElNotification } from 'element-plus'
 import { User, Lock, Hide, View } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/user'
-import { mockLoginApi, asAxiosResponse } from '@/api/mock/auth'
 import { localStorage as storage } from '@/utils/storage'
 import { useUserStore } from '@/store'
 
