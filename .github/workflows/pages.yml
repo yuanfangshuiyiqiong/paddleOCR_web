@@ -1,6 +1,9 @@
 ﻿name: Build and Deploy
 
-on: [push]
+on:
+  push:
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -11,39 +14,56 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 检出代码
       - name: Checkout 🛎️
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
+      # 安装 pnpm（必须在 setup-node 前）
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
 
-      - name: Install and Build 🔧
+      # 安装 Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # 输出版本（方便排查问题）
+      - name: Check Versions
+        run: |
+          node -v
+          npm -v
+          pnpm -v
+
+      # 安装依赖
+      - name: Install Dependencies
         run: |
           pnpm install --frozen-lockfile
+
+      # 构建项目
+      - name: Build Project
+        run: |
           pnpm run build
 
-      - name: Deploy 🚀
+      # 部署到 GitHub Pages
+      - name: Deploy to GitHub Pages 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
           folder: dist
           single-commit: true
 
-      - name: Deploy via SCP (覆盖文件)
+      # 部署到服务器
+      - name: Deploy via SCP
         uses: appleboy/scp-action@v0.1.6
         with:
-          username: root
           host: ${{ secrets.SSH_IP }}
+          username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: dist/
-          target: /root/code/yft-admin
+          source: "dist/*"
+          target: "/root/code/yft-admin"
           overwrite: true
           rm: true
