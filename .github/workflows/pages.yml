@@ -57,13 +57,13 @@ jobs:
           single-commit: true
 
       # 部署到服务器
-      - name: Deploy via SCP
-        uses: appleboy/scp-action@v0.1.6
-        with:
-          host: ${{ secrets.SSH_IP }}
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "dist/*"
-          target: "/root/code/yft-admin"
-          overwrite: true
-          rm: true
+     # - name: Deploy via SCP
+      #  uses: appleboy/scp-action@v0.1.6
+      #  with:
+       #   host: ${{ secrets.SSH_IP }}
+       #   username: root
+        #  key: ${{ secrets.SSH_PRIVATE_KEY }}
+          #source: "dist/*"
+         # target: "/root/code/yft-admin"
+          #overwrite: true
+          #rm: true
