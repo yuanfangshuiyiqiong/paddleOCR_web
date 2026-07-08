@@ -1,27 +1,41 @@
-name: Build and Deploy
+﻿name: Build and Deploy
+
 on: [push]
+
 permissions:
   contents: write
+
 jobs:
   build-and-deploy:
-    concurrency: ci-${{ github.ref }} # Recommended if you intend to make multiple deployments in quick succession.
+    concurrency: ci-${{ github.ref }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install and Build 🔧 # This example project is built using npm and outputs the result to the 'build' folder. Replace with the commands required to build your project, or remove this step entirely if your site is pre-built.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install and Build 🔧
         run: |
-          npm install pnpm -g
-          pnpm install
+          pnpm install --frozen-lockfile
           pnpm run build
 
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages # 指定推送到的远程分支
-          folder: dist # The folder the action should deploy.
-          single-commit: true # 单个提交
+          branch: gh-pages
+          folder: dist
+          single-commit: true
 
       - name: Deploy via SCP (覆盖文件)
         uses: appleboy/scp-action@v0.1.6
@@ -29,7 +43,7 @@ jobs:
           username: root
           host: ${{ secrets.SSH_IP }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: dist/ # 本地打包目录
-          target: /root/code/yft-admin # 服务器目标路径
-          overwrite: true # 关键参数：强制覆盖
+          source: dist/
+          target: /root/code/yft-admin
+          overwrite: true
           rm: true
